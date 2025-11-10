@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: flask-deployment
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: flask-api
@@ -15,7 +15,7 @@ spec:
       containers:
       - name: flask-api
         image: flask-api:latest
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5000
         env:
@@ -33,7 +33,7 @@ kind: Service
 metadata:
   name: flask-service
 spec:
-  type: NodePort
+  type: LoadBalancer
   selector:
     app: flask-api
   ports:
