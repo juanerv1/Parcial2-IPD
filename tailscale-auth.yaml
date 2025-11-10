@@ -3,4 +3,4 @@ kind: Secret
 metadata:
   name: tailscale-auth
 stringData:
-  TS_AUTHKEY: tskey-auth-kFjpbaRMFE11CNTRL-J2yy7dGzuPgWMZ4ULbL6Qga1ZrpyL9aBe
+  TS_AUTHKEY: 'TU-KEY-auth-xxxxxxxxxxxxxxxxxxxx'
