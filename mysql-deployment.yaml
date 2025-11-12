@@ -55,15 +55,9 @@ kind: Service
 metadata:
   name: mysql-service
 spec:
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: mysql-service
-spec:
+  type: ClusterIP
   selector:
     app: mysql
   ports:
-    - protocol: TCP
-      port: 3306        # Puerto dentro del cluster que se usará para conectarse
-      targetPort: 3306  # Puerto del contenedor donde MySQL escucha
+  - port: 3306
+    targetPort: 3306

@@ -1,43 +1,16 @@
-# ============================================
-# RBAC: Permisos mínimos para Tailscale
-# ============================================
 apiVersion: v1
-kind: ServiceAccount
+kind: PersistentVolumeClaim
 metadata:
-  name: tailscale
+  name: tailscale-state
+  namespace: parcial2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: tailscale-role
-rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get", "update", "create"]
-  - apiGroups: [""]
-    resources: ["events"]
-    verbs: ["get", "create", "patch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: tailscale-rolebinding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: tailscale-role
-subjects:
-  - kind: ServiceAccount
-    name: tailscale
----
-# ============================================
-# Secret: Auth Key de Tailscale (crea antes de aplicar)
-# ============================================
-# kubectl create secret generic tailscale-auth \
-#   --from-literal=TS_AUTHKEY='tskey-auth-xxxxxxxxxxxxxxxxxxxx'
-# ============================================
-# Deployment principal: Gateway Tailscale
-# ============================================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -52,26 +25,39 @@ spec:
       labels:
         app: tailscale-gateway
     spec:
-      serviceAccountName: tailscale
       containers:
-      - name: tailscale
-        image: tailscale/tailscale:stable
-        securityContext:
-          capabilities:
-            add: ["NET_ADMIN", "SYS_MODULE"]
-        env:
-          - name: TS_AUTHKEY
-            valueFrom:
-              secretKeyRef:
-                name: tailscale-auth
-                key: TS_AUTHKEY
-          - name: TS_STATE_DIR
-            value: /var/lib/tailscale
-          - name: TS_EXTRA_ARGS
-            value: "--advertise-routes=10.96.0.0/12,10.244.0.0/16 --hostname=k8s-gateway"
-        volumeMounts:
-          - name: tailscale-state
-            mountPath: /var/lib/tailscale
+        - name: tailscale
+          image: tailscale-gateway:with-socat
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN", "SYS_MODULE"]
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-auth
+                  key: TS_AUTHKEY
+          volumeMounts:
+            - name: tailscale-state
+              mountPath: /var/lib/tailscale
+          command:
+            - sh
+            - -c
+            - |
+              echo "Iniciando tailscaled..."
+              tailscaled --state=/var/lib/tailscale/tailscaled.state --tun=userspace-networking &
+              sleep 5
+              tailscale up \
+                --authkey=${TS_AUTHKEY} \
+                --hostname=minikube-api \
+                --accept-dns=false \
+                --accept-routes=true \
+                --advertise-exit-node
+              echo "Iniciando proxy con socat hacia flask-service..."
+              socat TCP-LISTEN:5000,fork TCP:flask-service.parcial2.svc.cluster.local:5000 &
+              echo "Gateway activo, manteniendo contenedor vivo..."
+              tail -f /dev/null
       volumes:
         - name: tailscale-state
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: tailscale-state
