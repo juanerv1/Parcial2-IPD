@@ -1,49 +1,67 @@
-# 🚀 Despliegue Flask + MySQL + Tailscale en Minikube
+# 🚀 Despliegue de Infraestructura con Minikube, Flask, MySQL y Tailscale
 
-## 1️⃣ Iniciar Minikube
+Este proyecto levanta una infraestructura completa con **Minikube**, incluyendo:
+
+- **Base de datos MySQL**
+- **API Flask**
+- **Secretos y Gateway de Tailscale**
+- **LoadBalancer interno para exponer la API**
+- **Comunicación segura a través de Tailscale**
+
+---
+
+## 🧩 1️⃣ Iniciar Minikube
+
+Asegúrate de tener Minikube corriendo:
+
 ```bash
-minikube start --driver=docker --cpus=4 --memory=6g
+minikube start
 ```
 
-## 2️⃣ Activar MetalLB (para LoadBalancer)
+Verifica el estado del nodo:
 ```bash
-minikube addons enable metallb
-```
-
-Asignar rango de IPs a MetalLB:
-```bash
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  namespace: metallb-system
-  name: config
-data:
-  config: |
-    address-pools:
-    - name: default
-      protocol: layer2
-      addresses:
-      - 192.168.49.240-192.168.49.250
-EOF
+kubectl get nodes
 ```
 
 ---
 
-## 3️⃣ (Opcional) Inicializar la base de datos con script SQL
+## 🧱 2️⃣ Configurar el entorno Docker dentro de Minikube
+
+Permite que las imágenes se creen directamente en el entorno interno:
+
 ```bash
-kubectl apply -f mysql-init-config.yaml
+eval $(minikube docker-env)
 ```
-> Asegúrate que tu `mysql-deployment.yaml` monte ese ConfigMap o initContainer.
 
 ---
 
-## 4️⃣ Crear volumen y base de datos MySQL
+## 🐳 3️⃣ Construir las imágenes Docker
+
+Construye las imágenes necesarias:
+
 ```bash
-kubectl apply -f mysql-deployment.yaml
+# Imagen del backend Flask
+docker build -t flask-api:latest -f Dockerfile.flask .
+
+# Imagen del gateway Tailscale (si aplica)
+docker build -t tailscale-gateway:latest -f Dockerfile.tailscale .
 ```
 
-Verificar estado:
+Verifica:
+```bash
+docker images
+```
+
+---
+
+## 🗄️ 4️⃣ Crear y desplegar la base de datos MySQL
+
+```bash
+kubectl apply -f mysql-init-config.yaml     # ConfigMap o script init.sql
+kubectl apply -f mysql-deployment.yaml    # Despliegue MySQL
+```
+
+Revisa los pods y servicios:
 ```bash
 kubectl get pods
 kubectl get svc
@@ -51,80 +69,108 @@ kubectl get svc
 
 ---
 
-## 5️⃣ Crear despliegue de la API Flask
+## ⚙️ 5️⃣ Desplegar la API Flask
+
 ```bash
 kubectl apply -f flask-deployment.yaml
 ```
 
-Verificar servicio:
+Verifica que el pod esté corriendo:
 ```bash
-kubectl get svc flask-service
+kubectl get pods -l app=flask-api
+```
+
+Prueba desde dentro del pod:
+```bash
+kubectl exec -it <flask-pod> -- curl http://localhost:5000/health
 ```
 
 ---
 
+## 🔐 6️⃣ Crear el Secret para Tailscale
 
-
-## 6️⃣ Crear Secret con AuthKey de Tailscale
+Ingresar la key de la VPN en el secret
 ```bash
-kubectl apply -f tailscale-secret.yaml
+kubectl apply -f tailscale-auth.yaml
+kubectl get secrets
 ```
 
 ---
 
-## 7️⃣ Crear Deployment del Tailscale Gateway
+## 🌐 7️⃣ Desplegar el Gateway de Tailscale
+
 ```bash
 kubectl apply -f tailscale-gateway.yaml
 ```
 
-Verificar que el pod está corriendo:
-```bash
-kubectl get pods -l app=tailscale-gateway
-```
-
-Ver logs:
+Verifica que esté corriendo correctamente:
 ```bash
 kubectl logs -f deploy/tailscale-gateway
 ```
 
----
-
-## 8️⃣ Aprobar rutas en el panel de Tailscale
-Entra a tu cuenta → **Machines → k8s-gateway → Routes → Approve**.
-
-Verifica rutas activas:
-```bash
-kubectl exec -it deploy/tailscale-gateway -- tailscale status
+Debes ver una IP tipo:
+```
+peerapi: serving on http://100.64.x.x:53128
 ```
 
 ---
 
-## 9️⃣ Probar conectividad
-Pod de prueba:
+## 🧪 8️⃣ Probar la API desde Tailscale
+
+Obtén la URL de servicio:
 ```bash
-kubectl run debug --rm -it --image=alpine -- sh
-apk add --no-cache curl
-curl http://flask-service:5000/clientes
+minikube service flask-service -n parcial2
 ```
 
-Desde otra máquina en Tailscale:
-```bash
-curl http://<IP_TAILSCALE_GATEWAY>:30007/clientes
+O usa la IP de Tailscale directamente:
 ```
-
----
-
-## 🔍 10️⃣ Verificar todo
-```bash
-kubectl get all
-kubectl get endpoints flask-service
-minikube service list
+http://100.64.190.41:32744/health
 ```
 
 ---
 
-## ✅ Limpieza (opcional)
-```bash
-kubectl delete all --all
-minikube delete
+## 🧾 🔍 Resumen de comandos
+
+| Paso | Archivo / Acción | Comando |
+|------|------------------|---------|
+| 1 | Iniciar Minikube | `minikube start` |
+| 2 | Configurar Docker local | `eval $(minikube docker-env)` |
+| 3 | Construir imagen Flask | `docker build -t flask-api:latest -f Dockerfile.flask .` |
+| 4 | Crear ConfigMap SQL | `kubectl apply -f sql-configure.yaml` |
+| 5 | Desplegar MySQL | `kubectl apply -f sql-deployment.yaml` |
+| 6 | Exponer MySQL | `kubectl apply -f sql-service.yaml` |
+| 7 | Desplegar Flask | `kubectl apply -f flask-deployment.yaml` |
+| 8 | Exponer Flask | `kubectl apply -f flask-service.yaml` |
+| 9 | Crear Secret Tailscale | `kubectl apply -f tailscale-secret.yaml` |
+| 10 | Desplegar Gateway Tailscale | `kubectl apply -f tailscale-gateway.yaml` |
+| 11 | Ver logs Gateway | `kubectl logs -f deploy/tailscale-gateway` |
+
+---
+
+## 📱 10️⃣ Probar desde el celular
+
+Desde la app de **Tailscale** en tu teléfono, puedes enviar peticiones HTTP a:
 ```
+http://<IP_TAILSCALE>:<PUERTO>/endpoint
+```
+
+Por ejemplo:
+```
+http://100.64.190.41:32744/clientes
+```
+
+Ejemplo de cuerpo JSON para POST:
+```json
+{
+  "nombre": "Juan Pérez",
+  "correo": "juanperez@example.com",
+  "telefono": "3001234567"
+}
+```
+
+Puedes usar apps como **Postman**, **Insomnia** o **Hoppscotch.io**.
+
+---
+
+✅ **Autor:** Juan Esteban Rodríguez Valencia  
+📅 **Última actualización:** 12 de noviembre de 2025
